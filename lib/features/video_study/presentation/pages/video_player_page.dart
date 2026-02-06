@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 
+import '../../../../core/widgets/shimmer_loading.dart';
+import '../../../../core/widgets/error_retry_widget.dart';
 import '../../../../core/widgets/interactive_text.dart';
 import '../../../../core/widgets/word_card_popup.dart';
 import '../../../../injection.dart';
@@ -239,8 +241,8 @@ class _VideoPlayerPageState extends ConsumerState<VideoPlayerPage> {
             ],
           );
         },
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('加载失败: $e')),
+        loading: () => const ShimmerLoading.detail(),
+        error: (e, _) => ErrorRetryWidget(message: '加载失败: $e', onRetry: () => ref.invalidate(videoResourceDetailProvider(widget.videoResourceId))),
       ),
     );
   }

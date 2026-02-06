@@ -1,3 +1,4 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -6,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/network/gemini_client.dart';
 import '../../../../injection.dart';
+import '../../../../services/data_export_service.dart';
 
 class SettingsPage extends ConsumerStatefulWidget {
   const SettingsPage({super.key});
@@ -192,6 +194,38 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           ),
           const SizedBox(height: 16),
 
+          // Data Management Section
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('数据管理', style: theme.textTheme.headlineSmall),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _exportData,
+                      icon: const Icon(Icons.upload, size: 18),
+                      label: const Text('导出备份'),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _importData,
+                      icon: const Icon(Icons.download, size: 18),
+                      label: const Text('导入备份'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
           // About Section
           Card(
             child: Padding(
@@ -213,6 +247,36 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         ],
       ),
     );
+  }
+
+  Future<void> _exportData() async {
+    try {
+      final exportService = getIt<DataExportService>();
+      final path = await exportService.exportData();
+      if (mounted) {
+        _showSnackBar('备份已导出: $path');
+      }
+    } catch (e) {
+      _showSnackBar('导出失败: $e');
+    }
+  }
+
+  Future<void> _importData() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+      );
+      if (result == null || result.files.single.path == null) return;
+
+      final exportService = getIt<DataExportService>();
+      final count = await exportService.importData(result.files.single.path!);
+      if (mounted) {
+        _showSnackBar('已导入 $count 条记录');
+      }
+    } catch (e) {
+      _showSnackBar('导入失败: $e');
+    }
   }
 
   Widget _buildSettingRow(String label, String value, IconData icon) {

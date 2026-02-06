@@ -37,6 +37,7 @@ class GeminiClient {
     required String prompt,
     Schema? responseSchema,
   }) async {
+    _ensureModel; // Check configuration
     final model = GenerativeModel(
       model: AppConstants.geminiModel,
       apiKey: _apiKey!,

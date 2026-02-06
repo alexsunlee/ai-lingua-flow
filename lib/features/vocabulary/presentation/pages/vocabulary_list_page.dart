@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/widgets/shimmer_loading.dart';
+import '../../../../core/widgets/error_retry_widget.dart';
+import '../../../../core/widgets/empty_state_widget.dart';
 import '../../../../injection.dart';
 import '../../../../services/tts_service.dart';
 import '../../domain/entities/vocabulary_entry.dart';
@@ -122,39 +125,18 @@ class _VocabularyListPageState extends ConsumerState<VocabularyListPage> {
             child: entriesAsync.when(
               data: (entries) {
                 if (entries.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.book_outlined,
-                          size: 64,
-                          color: colorScheme.onSurface.withValues(alpha: 0.3),
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          _showDueOnly ? '没有待复习的单词' : '生词本为空',
-                          style: theme.textTheme.bodyLarge?.copyWith(
-                            color:
-                                colorScheme.onSurface.withValues(alpha: 0.5),
-                          ),
-                        ),
-                        if (!_showDueOnly) ...[
-                          const SizedBox(height: 8),
-                          Text(
-                            '在阅读时长按单词即可添加',
-                            style: theme.textTheme.bodySmall,
-                          ),
-                        ],
-                      ],
-                    ),
+                  return EmptyStateWidget(
+                    icon: Icons.book_outlined,
+                    title: _showDueOnly ? '没有待复习的单词' : '生词本为空',
+                    subtitle: _showDueOnly ? null : '在阅读时长按单词即可添加',
                   );
                 }
                 return _buildEntryList(entries);
               },
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (error, _) => Center(
-                child: Text('加载失败: $error'),
+              loading: () => const ShimmerLoading(),
+              error: (error, _) => ErrorRetryWidget(
+                message: '加载失败: $error',
+                onRetry: () => ref.invalidate(vocabularyListProvider),
               ),
             ),
           ),

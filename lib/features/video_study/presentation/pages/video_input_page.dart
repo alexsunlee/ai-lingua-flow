@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/widgets/shimmer_loading.dart';
+import '../../../../core/widgets/error_retry_widget.dart';
+import '../../../../core/widgets/empty_state_widget.dart';
 import '../providers/video_study_providers.dart';
 
 class VideoInputPage extends ConsumerStatefulWidget {
@@ -128,22 +131,10 @@ class _VideoInputPageState extends ConsumerState<VideoInputPage> {
             child: videoResources.when(
               data: (videos) {
                 if (videos.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.video_library_outlined,
-                            size: 64, color: Colors.grey.shade300),
-                        const SizedBox(height: 16),
-                        Text(
-                          '还没有导入记录\n粘贴 YouTube 链接开始学习吧',
-                          textAlign: TextAlign.center,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: Colors.grey,
-                          ),
-                        ),
-                      ],
-                    ),
+                  return const EmptyStateWidget(
+                    icon: Icons.video_library_outlined,
+                    title: '还没有导入记录',
+                    subtitle: '粘贴 YouTube 链接开始学习吧',
                   );
                 }
                 return ListView.builder(
@@ -199,8 +190,8 @@ class _VideoInputPageState extends ConsumerState<VideoInputPage> {
                   },
                 );
               },
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(child: Text('加载失败: $e')),
+              loading: () => const ShimmerLoading(itemCount: 3),
+              error: (e, _) => ErrorRetryWidget(message: '加载失败: $e', onRetry: () => ref.invalidate(videoResourcesListProvider)),
             ),
           ),
         ],

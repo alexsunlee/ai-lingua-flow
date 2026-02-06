@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/widgets/shimmer_loading.dart';
+import '../../../../core/widgets/error_retry_widget.dart';
 import '../providers/shadowing_providers.dart';
 
 class ShadowingListPage extends ConsumerWidget {
@@ -51,8 +53,8 @@ class ShadowingListPage extends ConsumerWidget {
               ],
             );
           },
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, _) => Center(child: Text('加载失败: $e')),
+          loading: () => const ShimmerLoading(),
+          error: (e, _) => ErrorRetryWidget(message: '加载失败: $e', onRetry: () => ref.invalidate(shadowingSourcesProvider)),
         ),
       ),
     );

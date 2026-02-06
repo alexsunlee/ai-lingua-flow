@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/widgets/shimmer_loading.dart';
+import '../../../../core/widgets/error_retry_widget.dart';
+import '../../../../core/widgets/empty_state_widget.dart';
 import '../providers/assessment_providers.dart';
 import '../widgets/dimension_radar_chart.dart';
 import '../widgets/stats_card.dart';
@@ -93,9 +96,9 @@ class _AssessmentPageState extends ConsumerState<AssessmentPage> {
             ),
             loading: () => const SizedBox(
               height: 100,
-              child: Center(child: CircularProgressIndicator()),
+              child: ShimmerLoading(itemCount: 1),
             ),
-            error: (e, _) => Text('加载统计失败: $e'),
+            error: (e, _) => ErrorRetryWidget(message: '加载统计失败: $e', onRetry: () => ref.invalidate(learningStatsProvider)),
           ),
 
           const SizedBox(height: 16),
@@ -123,23 +126,10 @@ class _AssessmentPageState extends ConsumerState<AssessmentPage> {
           reports.when(
             data: (reportList) {
               if (reportList.isEmpty) {
-                return Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(32),
-                    child: Column(
-                      children: [
-                        Icon(Icons.assessment_outlined,
-                            size: 64, color: Colors.grey.shade300),
-                        const SizedBox(height: 16),
-                        Text(
-                          '还没有评估报告\n完成一些学习后生成你的第一份报告',
-                          textAlign: TextAlign.center,
-                          style: theme.textTheme.bodyMedium
-                              ?.copyWith(color: Colors.grey),
-                        ),
-                      ],
-                    ),
-                  ),
+                return const EmptyStateWidget(
+                  icon: Icons.assessment_outlined,
+                  title: '还没有评估报告',
+                  subtitle: '完成一些学习后生成你的第一份报告',
                 );
               }
 
@@ -175,8 +165,8 @@ class _AssessmentPageState extends ConsumerState<AssessmentPage> {
                 ],
               );
             },
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (e, _) => Text('加载报告失败: $e'),
+            loading: () => const ShimmerLoading(itemCount: 2),
+            error: (e, _) => ErrorRetryWidget(message: '加载报告失败: $e', onRetry: () => ref.invalidate(assessmentReportsProvider)),
           ),
         ],
       ),
