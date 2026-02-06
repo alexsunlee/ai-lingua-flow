@@ -1,30 +1,58 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:ai_lingua_flow/main.dart';
+import 'package:ai_lingua_flow/core/utils/text_parser.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  group('TextParser', () {
+    test('tokenizes English text into words and spaces', () {
+      final tokens = TextParser.tokenize('Hello world');
+      expect(tokens.length, 3); // Hello, ' ', world
+      expect(tokens[0].text, 'Hello');
+      expect(tokens[0].isWord, true);
+      expect(tokens[1].text, ' ');
+      expect(tokens[1].isWord, false);
+      expect(tokens[2].text, 'world');
+      expect(tokens[2].isWord, true);
+    });
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    test('tokenizes Chinese characters individually', () {
+      final tokens = TextParser.tokenize('你好');
+      expect(tokens.length, 2);
+      expect(tokens[0].text, '你');
+      expect(tokens[0].isWord, true);
+      expect(tokens[1].text, '好');
+      expect(tokens[1].isWord, true);
+    });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    test('handles mixed English and Chinese', () {
+      final tokens = TextParser.tokenize('Hello 你好');
+      final words = tokens.where((t) => t.isWord).toList();
+      expect(words.length, 3); // Hello, 你, 好
+    });
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    test('handles punctuation', () {
+      final tokens = TextParser.tokenize('Hello, world!');
+      final words = tokens.where((t) => t.isWord).toList();
+      expect(words.length, 2);
+      expect(words[0].text, 'Hello');
+      expect(words[1].text, 'world');
+    });
+
+    test('handles contractions', () {
+      final tokens = TextParser.tokenize("don't");
+      final words = tokens.where((t) => t.isWord).toList();
+      expect(words.length, 1);
+      expect(words[0].text, "don't");
+    });
+
+    test('extractWords returns only word strings', () {
+      final words = TextParser.extractWords('Hello, beautiful world!');
+      expect(words, ['Hello', 'beautiful', 'world']);
+    });
+
+    test('handles empty string', () {
+      expect(TextParser.tokenize(''), isEmpty);
+      expect(TextParser.extractWords(''), isEmpty);
+    });
   });
 }
