@@ -41,12 +41,14 @@ class WordCardPopup extends StatelessWidget {
   });
 
   /// Show as an overlay positioned near the tapped word.
-  static void show(
+  /// Returns the [OverlayEntry] so callers can manage its lifecycle.
+  static OverlayEntry showOverlay(
     BuildContext context, {
     required Offset position,
     required WordCardData data,
     VoidCallback? onPlayTts,
     VoidCallback? onAddToVocabulary,
+    VoidCallback? onClose,
     bool isLoading = false,
   }) {
     final overlay = Overlay.of(context);
@@ -60,12 +62,38 @@ class WordCardPopup extends StatelessWidget {
           isLoading: isLoading,
           onPlayTts: onPlayTts,
           onAddToVocabulary: onAddToVocabulary,
-          onClose: () => entry.remove(),
+          onClose: () {
+            if (onClose != null) {
+              onClose.call();
+            } else if (entry.mounted) {
+              entry.remove();
+            }
+          },
         );
       },
     );
 
     overlay.insert(entry);
+    return entry;
+  }
+
+  /// Show as an overlay (convenience, auto-manages lifecycle).
+  static void show(
+    BuildContext context, {
+    required Offset position,
+    required WordCardData data,
+    VoidCallback? onPlayTts,
+    VoidCallback? onAddToVocabulary,
+    bool isLoading = false,
+  }) {
+    showOverlay(
+      context,
+      position: position,
+      data: data,
+      onPlayTts: onPlayTts,
+      onAddToVocabulary: onAddToVocabulary,
+      isLoading: isLoading,
+    );
   }
 
   @override
@@ -116,7 +144,7 @@ class _WordCardOverlay extends StatelessWidget {
             elevation: 8,
             borderRadius: BorderRadius.circular(12),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 320),
+              constraints: const BoxConstraints(maxWidth: 280),
               child: _WordCardContent(
                 data: data,
                 isLoading: isLoading,
@@ -133,7 +161,7 @@ class _WordCardOverlay extends StatelessWidget {
 
   double _clampX(BuildContext context, double x) {
     final screenWidth = MediaQuery.of(context).size.width;
-    return (x - 160).clamp(8.0, screenWidth - 328);
+    return (x - 140).clamp(8.0, screenWidth - 288);
   }
 
   double _clampY(BuildContext context, double y) {
@@ -166,14 +194,14 @@ class _WordCardContent extends StatelessWidget {
     final theme = Theme.of(context);
 
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(12),
       ),
       child: isLoading
           ? const SizedBox(
-              height: 80,
+              height: 60,
               child: Center(child: CircularProgressIndicator()),
             )
           : Column(
@@ -186,19 +214,19 @@ class _WordCardContent extends StatelessWidget {
                     Expanded(
                       child: Text(
                         data.word,
-                        style: theme.textTheme.headlineSmall,
+                        style: theme.textTheme.titleMedium,
                       ),
                     ),
                     if (onPlayTts != null)
                       IconButton(
-                        icon: const Icon(Icons.volume_up, size: 20),
+                        icon: const Icon(Icons.volume_up, size: 18),
                         onPressed: onPlayTts,
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
                       ),
                     if (onClose != null)
                       IconButton(
-                        icon: const Icon(Icons.close, size: 20),
+                        icon: const Icon(Icons.close, size: 18),
                         onPressed: onClose,
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
@@ -207,7 +235,7 @@ class _WordCardContent extends StatelessWidget {
                 ),
                 // Pronunciation
                 if (data.pronunciation != null) ...[
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 2),
                   Text(
                     data.pronunciation!,
                     style: theme.textTheme.bodySmall?.copyWith(
@@ -217,45 +245,46 @@ class _WordCardContent extends StatelessWidget {
                 ],
                 // Translation
                 if (data.translation != null) ...[
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   Text(
                     data.translation!,
-                    style: theme.textTheme.bodyLarge?.copyWith(
+                    style: theme.textTheme.bodyMedium?.copyWith(
                       fontWeight: FontWeight.w600,
                     ),
                   ),
                 ],
                 // Explanation
                 if (data.explanation != null) ...[
-                  const SizedBox(height: 8),
-                  Text(data.explanation!, style: theme.textTheme.bodyMedium),
+                  const SizedBox(height: 6),
+                  Text(data.explanation!, style: theme.textTheme.bodySmall),
                 ],
                 // Etymology
                 if (data.etymology != null) ...[
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   Text(
                     '词源: ${data.etymology!}',
-                    style: theme.textTheme.bodySmall?.copyWith(
+                    style: const TextStyle(
+                      fontSize: 11,
                       fontStyle: FontStyle.italic,
                     ),
                   ),
                 ],
                 // Examples
                 if (data.examples.isNotEmpty) ...[
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   ...data.examples.take(2).map(
                         (e) => Padding(
-                          padding: const EdgeInsets.only(bottom: 4),
+                          padding: const EdgeInsets.only(bottom: 2),
                           child: Text(
                             '• $e',
-                            style: theme.textTheme.bodySmall,
+                            style: const TextStyle(fontSize: 11),
                           ),
                         ),
                       ),
                 ],
                 // Synonyms
                 if (data.synonyms.isNotEmpty) ...[
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   Wrap(
                     spacing: 4,
                     runSpacing: 4,
@@ -263,7 +292,7 @@ class _WordCardContent extends StatelessWidget {
                         .take(5)
                         .map(
                           (s) => Chip(
-                            label: Text(s, style: const TextStyle(fontSize: 11)),
+                            label: Text(s, style: const TextStyle(fontSize: 10)),
                             padding: EdgeInsets.zero,
                             materialTapTargetSize:
                                 MaterialTapTargetSize.shrinkWrap,
@@ -275,19 +304,19 @@ class _WordCardContent extends StatelessWidget {
                 ],
                 // Add to Vocabulary button
                 if (onAddToVocabulary != null) ...[
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerRight,
                     child: data.isInVocabulary
-                        ? OutlinedButton.icon(
+                        ? TextButton.icon(
                             onPressed: null,
-                            icon: const Icon(Icons.check, size: 16),
-                            label: const Text('已添加到生词本'),
+                            icon: const Icon(Icons.check, size: 14),
+                            label: const Text('已添加', style: TextStyle(fontSize: 12)),
                           )
-                        : ElevatedButton.icon(
+                        : TextButton.icon(
                             onPressed: onAddToVocabulary,
-                            icon: const Icon(Icons.add, size: 16),
-                            label: const Text('添加到生词本'),
+                            icon: const Icon(Icons.add, size: 14),
+                            label: const Text('添加到生词本', style: TextStyle(fontSize: 12)),
                           ),
                   ),
                 ],

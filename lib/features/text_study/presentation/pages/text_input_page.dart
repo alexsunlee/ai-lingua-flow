@@ -16,13 +16,11 @@ class TextInputPage extends ConsumerStatefulWidget {
 
 class _TextInputPageState extends ConsumerState<TextInputPage> {
   final _textController = TextEditingController();
-  final _titleController = TextEditingController();
   bool _isAnalyzing = false;
 
   @override
   void dispose() {
     _textController.dispose();
-    _titleController.dispose();
     super.dispose();
   }
 
@@ -38,9 +36,7 @@ class _TextInputPageState extends ConsumerState<TextInputPage> {
     setState(() => _isAnalyzing = true);
 
     try {
-      final title = _titleController.text.trim().isEmpty
-          ? '学习材料 ${DateTime.now().month}/${DateTime.now().day}'
-          : _titleController.text.trim();
+      final title = '学习材料 ${DateTime.now().month}/${DateTime.now().day}';
 
       final analyzeText = ref.read(analyzeTextUseCaseProvider);
       final studyTextId = await analyzeText(
@@ -84,14 +80,6 @@ class _TextInputPageState extends ConsumerState<TextInputPage> {
             padding: const EdgeInsets.all(16),
             child: Column(
               children: [
-                TextField(
-                  controller: _titleController,
-                  decoration: const InputDecoration(
-                    hintText: '标题 (可选)',
-                    prefixIcon: Icon(Icons.title),
-                  ),
-                ),
-                const SizedBox(height: 12),
                 TextField(
                   controller: _textController,
                   maxLines: 6,

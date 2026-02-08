@@ -10,9 +10,9 @@ import '../../features/text_study/presentation/pages/text_input_page.dart';
 import '../../features/text_study/presentation/pages/text_reader_page.dart';
 import '../../features/video_study/presentation/pages/video_input_page.dart';
 import '../../features/video_study/presentation/pages/video_player_page.dart';
-import '../../features/shadowing/presentation/pages/shadowing_list_page.dart';
+import '../../features/image_study/presentation/pages/image_study_page.dart';
+import '../../features/review/presentation/pages/review_hub_page.dart';
 import '../../features/shadowing/presentation/pages/shadowing_practice_page.dart';
-import '../../features/vocabulary/presentation/pages/vocabulary_list_page.dart';
 import '../../features/vocabulary/presentation/pages/review_session_page.dart';
 import '../../features/vocabulary/presentation/pages/dictation_page.dart';
 import '../../features/assessment/presentation/pages/assessment_page.dart';
@@ -79,38 +79,45 @@ class AppRouter {
                 ),
               ],
             ),
-            // Tab 2: Shadowing
+            // Tab 2: Image Study
             StatefulShellBranch(
               routes: [
                 GoRoute(
-                  path: '/shadowing',
-                  builder: (context, state) => const ShadowingListPage(),
+                  path: '/image-study',
+                  builder: (context, state) => const ImageStudyPage(),
                   routes: [
                     GoRoute(
-                      path: 'practice/:id',
-                      builder: (context, state) => ShadowingPracticePage(
-                        sourceId: state.pathParameters['id']!,
-                        sourceType:
-                            state.uri.queryParameters['type'] ?? 'text',
+                      path: 'reader/:id',
+                      builder: (context, state) => TextReaderPage(
+                        studyTextId: state.pathParameters['id']!,
                       ),
                     ),
                   ],
                 ),
               ],
             ),
-            // Tab 3: Vocabulary
+            // Tab 3: Review (Shadowing + Vocabulary)
             StatefulShellBranch(
               routes: [
                 GoRoute(
-                  path: '/vocabulary',
-                  builder: (context, state) => const VocabularyListPage(),
+                  path: '/review',
+                  builder: (context, state) => const ReviewHubPage(),
                   routes: [
                     GoRoute(
-                      path: 'review',
-                      builder: (context, state) => const ReviewSessionPage(),
+                      path: 'shadowing/practice/:id',
+                      builder: (context, state) => ShadowingPracticePage(
+                        sourceId: state.pathParameters['id']!,
+                        sourceType:
+                            state.uri.queryParameters['type'] ?? 'text',
+                      ),
                     ),
                     GoRoute(
-                      path: 'dictation',
+                      path: 'vocabulary/review',
+                      builder: (context, state) =>
+                          const ReviewSessionPage(),
+                    ),
+                    GoRoute(
+                      path: 'vocabulary/dictation',
                       builder: (context, state) => const DictationPage(),
                     ),
                   ],

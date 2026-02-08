@@ -8,16 +8,37 @@ import '../models/video_resource_model.dart';
 
 /// Local SQLite datasource for video study CRUD operations.
 class VideoStudyLocalDatasource {
-  /// Retrieve all video resources, ordered by most recently updated.
+  /// Retrieve all video resources with segment counts, ordered by most recently updated.
   Future<List<VideoResource>> getAllVideoResources() async {
+    final db = await AppDatabase.database;
+    final rows = await db.rawQuery('''
+      SELECT vr.*, COUNT(ts.id) as segment_count
+      FROM video_resources vr
+      LEFT JOIN transcript_segments ts ON vr.id = ts.video_resource_id
+      GROUP BY vr.id
+      ORDER BY vr.updated_at DESC
+    ''');
+    return rows.map((row) {
+      final entity = VideoResourceModel.fromMap(row).toEntity();
+      final count = row['segment_count'] as int? ?? 0;
+      return entity.copyWith(segmentCount: count);
+    }).toList();
+  }
+
+  /// Retrieve a video resource by its YouTube video ID.
+  Future<VideoResource?> getVideoResourceByYoutubeId(
+      String youtubeVideoId) async {
     final db = await AppDatabase.database;
     final rows = await db.query(
       'video_resources',
-      orderBy: 'updated_at DESC',
+      where: 'youtube_video_id = ?',
+      whereArgs: [youtubeVideoId],
+      limit: 1,
     );
-    return rows
-        .map((row) => VideoResourceModel.fromMap(row).toEntity())
-        .toList();
+    if (rows.isEmpty) return null;
+    final videoResource = VideoResourceModel.fromMap(rows.first).toEntity();
+    final segments = await getSegmentsForVideo(videoResource.id);
+    return videoResource.copyWith(segments: segments);
   }
 
   /// Retrieve a single video resource by [id].

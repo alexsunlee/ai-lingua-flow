@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/database/app_database.dart';
@@ -49,11 +51,17 @@ final shadowingSourcesProvider =
   final sources = <ShadowingSource>[];
 
   for (final row in textResults) {
+    final originalText = row['original_text'] as String?;
+    String? summary;
+    if (originalText != null && originalText.isNotEmpty) {
+      summary = originalText.substring(0, min(100, originalText.length));
+    }
     sources.add(ShadowingSource(
       id: row['id'] as String,
       title: row['title'] as String,
       type: 'text',
       createdAt: DateTime.parse(row['created_at'] as String),
+      summary: summary,
     ));
   }
 
@@ -75,11 +83,13 @@ class ShadowingSource {
   final String title;
   final String type;
   final DateTime createdAt;
+  final String? summary;
 
   const ShadowingSource({
     required this.id,
     required this.title,
     required this.type,
     required this.createdAt,
+    this.summary,
   });
 }

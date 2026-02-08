@@ -1,3 +1,5 @@
+import 'package:sqflite/sqflite.dart';
+
 import '../../../../core/database/app_database.dart';
 import '../models/review_schedule_model.dart';
 import '../models/vocabulary_entry_model.dart';
@@ -28,10 +30,14 @@ class VocabularyLocalDatasource {
     return VocabularyEntryModel.fromMap(rows.first);
   }
 
-  /// Insert a new vocabulary entry.
+  /// Insert a new vocabulary entry, replacing on duplicate word+language.
   Future<void> insertEntry(VocabularyEntryModel model) async {
     final db = await AppDatabase.database;
-    await db.insert('vocabulary_entries', model.toMap());
+    await db.insert(
+      'vocabulary_entries',
+      model.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
   }
 
   /// Update an existing vocabulary entry.

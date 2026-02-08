@@ -6,14 +6,15 @@ import '../../../../core/widgets/shimmer_loading.dart';
 import '../../../../core/widgets/error_retry_widget.dart';
 import '../providers/shadowing_providers.dart';
 
-class ShadowingListPage extends ConsumerStatefulWidget {
-  const ShadowingListPage({super.key});
+/// Extracted body content from ShadowingListPage for embedding in ReviewHubPage.
+class ShadowingListBody extends ConsumerStatefulWidget {
+  const ShadowingListBody({super.key});
 
   @override
-  ConsumerState<ShadowingListPage> createState() => _ShadowingListPageState();
+  ConsumerState<ShadowingListBody> createState() => _ShadowingListBodyState();
 }
 
-class _ShadowingListPageState extends ConsumerState<ShadowingListPage>
+class _ShadowingListBodyState extends ConsumerState<ShadowingListBody>
     with WidgetsBindingObserver {
   @override
   void initState() {
@@ -34,11 +35,9 @@ class _ShadowingListPageState extends ConsumerState<ShadowingListPage>
     }
   }
 
-  /// Refresh data every time this page becomes visible (tab switch).
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Invalidate to re-fetch latest study texts and video resources.
     ref.invalidate(shadowingSourcesProvider);
   }
 
@@ -48,52 +47,49 @@ class _ShadowingListPageState extends ConsumerState<ShadowingListPage>
 
     return DefaultTabController(
       length: 2,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('跟读练习'),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.settings),
-              onPressed: () => context.push('/settings'),
-            ),
-          ],
-          bottom: const TabBar(
+      child: Column(
+        children: [
+          const TabBar(
             tabs: [
               Tab(text: '文本'),
               Tab(text: '视频'),
             ],
           ),
-        ),
-        body: sources.when(
-          data: (sourceList) {
-            final textSources =
-                sourceList.where((s) => s.type == 'text').toList();
-            final videoSources =
-                sourceList.where((s) => s.type == 'video').toList();
+          Expanded(
+            child: sources.when(
+              data: (sourceList) {
+                final textSources =
+                    sourceList.where((s) => s.type == 'text').toList();
+                final videoSources =
+                    sourceList.where((s) => s.type == 'video').toList();
 
-            return TabBarView(
-              children: [
-                _SourceList(
-                  sources: textSources,
-                  emptyMessage: '还没有文本材料\n请先在"文本学习"中添加文本',
-                  emptyIcon: Icons.article_outlined,
-                  onRefresh: () => ref.invalidate(shadowingSourcesProvider),
-                ),
-                _SourceList(
-                  sources: videoSources,
-                  emptyMessage: '还没有视频材料\n请先在"视频学习"中添加视频',
-                  emptyIcon: Icons.videocam_outlined,
-                  onRefresh: () => ref.invalidate(shadowingSourcesProvider),
-                ),
-              ],
-            );
-          },
-          loading: () => const ShimmerLoading(),
-          error: (e, _) => ErrorRetryWidget(
-            message: '加载失败: $e',
-            onRetry: () => ref.invalidate(shadowingSourcesProvider),
+                return TabBarView(
+                  children: [
+                    _SourceList(
+                      sources: textSources,
+                      emptyMessage: '还没有文本材料\n请先在"文本学习"中添加文本',
+                      emptyIcon: Icons.article_outlined,
+                      onRefresh: () =>
+                          ref.invalidate(shadowingSourcesProvider),
+                    ),
+                    _SourceList(
+                      sources: videoSources,
+                      emptyMessage: '还没有视频材料\n请先在"视频学习"中添加视频',
+                      emptyIcon: Icons.videocam_outlined,
+                      onRefresh: () =>
+                          ref.invalidate(shadowingSourcesProvider),
+                    ),
+                  ],
+                );
+              },
+              loading: () => const ShimmerLoading(),
+              error: (e, _) => ErrorRetryWidget(
+                message: '加载失败: $e',
+                onRetry: () => ref.invalidate(shadowingSourcesProvider),
+              ),
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -160,7 +156,7 @@ class _SourceList extends StatelessWidget {
               ),
               trailing: const Icon(Icons.play_arrow),
               onTap: () => context.go(
-                '/shadowing/practice/${source.id}?type=${source.type}',
+                '/review/shadowing/practice/${source.id}?type=${source.type}',
               ),
             ),
           );

@@ -24,33 +24,52 @@ class DictionaryService {
 
   /// Look up a word through the 3-tier cascade.
   /// Results are cached to SQLite for offline access.
+  /// Always ensures Chinese translation and etymology are present via Gemini.
   Future<WordCardData> lookup(String word) async {
     final normalizedWord = word.trim().toLowerCase();
 
     // Tier 1: Local DB
     final localResult = await _lookupLocal(normalizedWord);
-    if (localResult != null) return localResult;
+    if (localResult != null && _isComplete(localResult)) return localResult;
 
     // Tier 2: Free Dictionary API
+    WordCardData? apiResult;
     try {
-      final apiResult = await _lookupFreeDictionary(normalizedWord);
-      if (apiResult != null) {
-        await _cacheResult(apiResult);
-        return apiResult;
-      }
+      apiResult = await _lookupFreeDictionary(normalizedWord);
     } catch (_) {
-      // Fall through to Tier 3
+      // Fall through
     }
 
-    // Tier 3: Gemini API
+    // Tier 3: Gemini API — used as primary or to supplement Tier 2
     try {
-      final geminiResult = await _lookupGemini(normalizedWord);
-      await _cacheResult(geminiResult);
-      return geminiResult;
+      if (apiResult != null) {
+        // Supplement missing Chinese translation & etymology from Gemini
+        final supplemented = await _supplementWithGemini(apiResult);
+        await _cacheResult(supplemented);
+        return supplemented;
+      } else if (localResult != null) {
+        // Local cache exists but incomplete — supplement it
+        final supplemented = await _supplementWithGemini(localResult);
+        await _updateCache(supplemented);
+        return supplemented;
+      } else {
+        // Full Gemini lookup
+        final geminiResult = await _lookupGemini(normalizedWord);
+        await _cacheResult(geminiResult);
+        return geminiResult;
+      }
     } catch (e) {
-      // Return minimal data
-      return WordCardData(word: normalizedWord);
+      // Return whatever we have
+      return apiResult ?? localResult ?? WordCardData(word: normalizedWord);
     }
+  }
+
+  /// Check if a WordCardData has all key fields populated.
+  bool _isComplete(WordCardData data) {
+    return data.translation != null &&
+        data.translation!.isNotEmpty &&
+        data.etymology != null &&
+        data.etymology!.isNotEmpty;
   }
 
   /// Tier 1: Local SQLite lookup.
@@ -125,6 +144,30 @@ class DictionaryService {
     );
   }
 
+  /// Supplement a partial result (from Free Dictionary API or local cache)
+  /// with Chinese translation and etymology from Gemini.
+  Future<WordCardData> _supplementWithGemini(WordCardData partial) async {
+    final prompt = '''
+For the English word "${partial.word}", provide ONLY these two fields for a Chinese learner.
+Return JSON with:
+- translation: Chinese translation (简体中文, concise)
+- etymology: word origin/root (brief, in Chinese, e.g. 来自拉丁语 xxx，意为 yyy)
+''';
+
+    final result = await _geminiClient.generateStructured(prompt: prompt);
+
+    return WordCardData(
+      word: partial.word,
+      pronunciation: partial.pronunciation,
+      translation: result['translation'] as String? ?? partial.translation,
+      explanation: partial.explanation,
+      etymology: result['etymology'] as String? ?? partial.etymology,
+      examples: partial.examples,
+      synonyms: partial.synonyms,
+      isInVocabulary: partial.isInVocabulary,
+    );
+  }
+
   /// Tier 3: Gemini API fallback.
   Future<WordCardData> _lookupGemini(String word) async {
     final prompt = '''
@@ -179,6 +222,24 @@ Return JSON with these fields:
         'created_at': DateTime.now().toIso8601String(),
       },
       conflictAlgorithm: ConflictAlgorithm.ignore,
+    );
+  }
+
+  /// Update an existing cache entry with supplemented data.
+  Future<void> _updateCache(WordCardData data) async {
+    final db = await AppDatabase.database;
+    await db.update(
+      'vocabulary_entries',
+      {
+        'translation': data.translation,
+        'etymology': data.etymology,
+        'pronunciation': data.pronunciation,
+        'explanation': data.explanation,
+        'example_sentences': jsonEncode(data.examples),
+        'synonyms': jsonEncode(data.synonyms),
+      },
+      where: 'LOWER(word) = ? AND language = ?',
+      whereArgs: [data.word.toLowerCase(), 'en'],
     );
   }
 

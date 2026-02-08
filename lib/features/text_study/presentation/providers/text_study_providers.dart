@@ -1,12 +1,11 @@
-import 'dart:convert';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:sqflite/sqflite.dart';
+import 'package:uuid/uuid.dart';
 
-import '../../../../core/database/app_database.dart';
 import '../../../../core/network/gemini_client.dart';
 import '../../../../core/widgets/word_card_popup.dart';
 import '../../../../injection.dart';
+import '../../../vocabulary/domain/entities/vocabulary_entry.dart';
+import '../../../vocabulary/presentation/providers/vocabulary_providers.dart';
 import '../../data/datasources/text_study_local_datasource.dart';
 import '../../data/repositories/text_study_repository_impl.dart';
 import '../../domain/entities/study_text.dart';
@@ -88,28 +87,24 @@ final studyTextDetailProvider =
 // Add word to vocabulary helper
 // ---------------------------------------------------------------------------
 
-/// Returns a callback that persists a [WordCardData] into the
-/// `vocabulary_entries` table.
+/// Returns a callback that persists a [WordCardData] via the vocabulary
+/// repository, which also creates an initial SM-2 review schedule.
 final addToVocabularyProvider =
     Provider<Future<void> Function(WordCardData)>((ref) {
   return (WordCardData data) async {
-    final db = await AppDatabase.database;
-    await db.insert(
-      'vocabulary_entries',
-      {
-        'id': DateTime.now().millisecondsSinceEpoch.toString(),
-        'word': data.word,
-        'language': 'en',
-        'pronunciation': data.pronunciation,
-        'translation': data.translation,
-        'explanation': data.explanation,
-        'etymology': data.etymology,
-        'example_sentences': jsonEncode(data.examples),
-        'synonyms': jsonEncode(data.synonyms),
-        'source_type': 'text_study',
-        'created_at': DateTime.now().toIso8601String(),
-      },
-      conflictAlgorithm: ConflictAlgorithm.ignore,
+    const uuid = Uuid();
+    final entry = VocabularyEntry(
+      id: uuid.v4(),
+      word: data.word,
+      pronunciation: data.pronunciation,
+      translation: data.translation,
+      explanation: data.explanation,
+      etymology: data.etymology,
+      exampleSentences: data.examples,
+      synonyms: data.synonyms,
+      sourceType: 'text_study',
+      createdAt: DateTime.now(),
     );
+    await ref.read(vocabularyListProvider.notifier).addEntry(entry);
   };
 });

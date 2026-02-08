@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
@@ -22,6 +23,13 @@ class ProcessVideo {
   Future<String> call({required String youtubeUrl}) async {
     // 1. Extract video ID from the URL.
     final videoId = VideoId(youtubeUrl);
+
+    // Check for existing video with same YouTube ID.
+    final existing =
+        await _localDatasource.getVideoResourceByYoutubeId(videoId.value);
+    if (existing != null) {
+      return existing.id;
+    }
 
     // 2. Fetch video metadata from YouTube.
     final metadata = await _youtubeDatasource.fetchVideoMetadata(videoId.value);
@@ -64,8 +72,47 @@ class ProcessVideo {
         ));
       }
 
+      debugPrint('[ProcessVideo] YouTube captions: ${segments.length} segments');
+
+      // If no YouTube captions, send YouTube URL directly to Gemini.
+      List<RawCaptionSegment> geminiSegments = [];
+      if (segments.isEmpty) {
+        debugPrint('[ProcessVideo] No YouTube captions, '
+            'using Gemini video understanding...');
+        try {
+          geminiSegments =
+              await _youtubeDatasource.transcribeVideoWithGemini(
+            youtubeUrl: youtubeUrl,
+          );
+          debugPrint('[ProcessVideo] Gemini returned: ${geminiSegments.length} segments');
+
+          // Translate via text generation.
+          if (geminiSegments.isNotEmpty) {
+            geminiSegments =
+                await _youtubeDatasource.translateSegments(geminiSegments);
+          }
+
+          for (int i = 0; i < geminiSegments.length; i++) {
+            final raw = geminiSegments[i];
+            segments.add(TranscriptSegment(
+              id: _uuid.v4(),
+              videoResourceId: resourceId,
+              segmentIndex: i,
+              startMs: raw.startMs,
+              endMs: raw.endMs,
+              originalText: raw.text,
+              translatedText: raw.translation,
+            ));
+          }
+        } catch (e) {
+          debugPrint('[ProcessVideo] Gemini video transcription failed: $e');
+        }
+      }
+
+      debugPrint('[ProcessVideo] Final segment count: ${segments.length}');
       if (segments.isNotEmpty) {
         await _localDatasource.insertSegments(segments);
+        debugPrint('[ProcessVideo] Saved ${segments.length} segments to DB');
       }
     } catch (e) {
       // Captions may not be available; the video is still saved.

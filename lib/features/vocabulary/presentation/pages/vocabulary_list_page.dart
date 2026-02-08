@@ -6,7 +6,7 @@ import '../../../../core/widgets/shimmer_loading.dart';
 import '../../../../core/widgets/error_retry_widget.dart';
 import '../../../../core/widgets/empty_state_widget.dart';
 import '../../../../injection.dart';
-import '../../../../services/tts_service.dart';
+import '../../../../services/gemini_tts_service.dart';
 import '../../domain/entities/vocabulary_entry.dart';
 import '../providers/vocabulary_providers.dart';
 import '../widgets/vocabulary_card.dart';
@@ -213,7 +213,7 @@ class _VocabularyListPageState extends ConsumerState<VocabularyListPage> {
   }
 
   void _playWord(String word) {
-    final tts = getIt<TtsService>();
+    final tts = getIt<GeminiTtsService>();
     tts.speak(word);
   }
 }

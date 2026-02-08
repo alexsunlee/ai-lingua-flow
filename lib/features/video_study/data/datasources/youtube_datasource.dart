@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 import '../../../../core/network/gemini_client.dart';
@@ -10,11 +12,13 @@ class RawCaptionSegment {
   final int startMs;
   final int endMs;
   final String text;
+  final String? translation;
 
   const RawCaptionSegment({
     required this.startMs,
     required this.endMs,
     required this.text,
+    this.translation,
   });
 }
 
@@ -102,6 +106,29 @@ class YouTubeDatasource {
         }
       }
       return segments;
+    } catch (e) {
+      // Some videos have captions listed but malformed XML data.
+      debugPrint('Caption extraction failed for $videoId: $e');
+      return [];
+    } finally {
+      yt.close();
+    }
+  }
+
+  /// Get a playable video stream URL for the given video ID.
+  /// Returns the URL of the best available muxed stream (video+audio).
+  Future<String> getVideoStreamUrl(String videoId) async {
+    final yt = YoutubeExplode();
+    try {
+      final manifest = await yt.videos.streamsClient.getManifest(videoId);
+      // Prefer muxed streams (video + audio combined) for direct playback
+      final muxed = manifest.muxed.sortByVideoQuality();
+      if (muxed.isNotEmpty) {
+        return muxed.first.url.toString();
+      }
+      // Fallback to audio-only if no muxed available
+      final audio = manifest.audioOnly.withHighestBitrate();
+      return audio.url.toString();
     } finally {
       yt.close();
     }
@@ -109,28 +136,171 @@ class YouTubeDatasource {
 
   /// Download the audio stream of a video and save it locally.
   /// Returns the file path of the saved audio file.
+  /// Times out after 60 seconds to prevent hanging on stalled streams.
   Future<String> downloadAudio(String videoId) async {
     final yt = YoutubeExplode();
+    String? filePath;
     try {
+      debugPrint('[downloadAudio] Fetching stream manifest for $videoId...');
       final manifest = await yt.videos.streamsClient.getManifest(videoId);
       final audioStreamInfo = manifest.audioOnly.withHighestBitrate();
+      debugPrint('[downloadAudio] Got manifest — '
+          'container=${audioStreamInfo.container.name}, '
+          'size=${audioStreamInfo.size.totalBytes} bytes');
 
       final audioStream = yt.videos.streamsClient.get(audioStreamInfo);
 
-      final filePath =
-          _fileStorageService.audioFilePath('$videoId.${audioStreamInfo.container.name}');
+      filePath = _fileStorageService
+          .audioFilePath('$videoId.${audioStreamInfo.container.name}');
       final file = File(filePath);
       final fileStream = file.openWrite();
 
-      await for (final chunk in audioStream) {
-        fileStream.add(chunk);
-      }
-      await fileStream.flush();
-      await fileStream.close();
+      debugPrint('[downloadAudio] Starting download to $filePath...');
+      await (() async {
+        await for (final chunk in audioStream) {
+          fileStream.add(chunk);
+        }
+        await fileStream.flush();
+        await fileStream.close();
+      })()
+          .timeout(const Duration(seconds: 60));
 
+      debugPrint('[downloadAudio] Download complete: $filePath');
       return filePath;
+    } on TimeoutException {
+      debugPrint('[downloadAudio] Timed out after 60s for $videoId');
+      if (filePath != null) {
+        final partial = File(filePath);
+        if (await partial.exists()) await partial.delete();
+      }
+      throw Exception('Audio download timed out after 60 seconds');
     } finally {
       yt.close();
+    }
+  }
+
+  /// Transcribe a YouTube video using Gemini's native video understanding.
+  /// Sends the YouTube URL directly to Gemini — no download needed.
+  /// Returns English text + timestamps only; translation is done separately.
+  Future<List<RawCaptionSegment>> transcribeVideoWithGemini({
+    required String youtubeUrl,
+  }) async {
+    const prompt = '''
+Transcribe the spoken English in this video with accurate timestamps.
+Return a JSON object with a "segments" array where each element has:
+- "start_ms": integer, start time in milliseconds
+- "end_ms": integer, end time in milliseconds
+- "text": string, the transcribed English text for that segment
+
+Split into segments of 1-3 sentences each. Be precise with timestamps.
+''';
+
+    try {
+      debugPrint('[Gemini transcribe] Sending video URL to Gemini: $youtubeUrl');
+      final result = await _geminiClient.generateStructuredWithVideo(
+        prompt: prompt,
+        videoUri: youtubeUrl,
+      );
+      debugPrint('[Gemini transcribe] Raw result keys: ${result.keys.toList()}');
+
+      final segmentsList = result['segments'] as List? ?? [];
+      debugPrint('[Gemini transcribe] Segments count from JSON: ${segmentsList.length}');
+
+      final segments = <RawCaptionSegment>[];
+      for (int i = 0; i < segmentsList.length; i++) {
+        final map = segmentsList[i] as Map<String, dynamic>;
+        final startMs = (map['start_ms'] as num?)?.toInt();
+        final endMs = (map['end_ms'] as num?)?.toInt();
+        final text = (map['text'] as String?)?.trim() ?? '';
+        if (text.isEmpty || startMs == null || endMs == null) {
+          debugPrint('[Gemini transcribe] Skipped segment $i: '
+              'start=$startMs end=$endMs text="${text.isEmpty ? "<empty>" : text}"');
+          continue;
+        }
+        segments.add(RawCaptionSegment(
+          startMs: startMs,
+          endMs: endMs,
+          text: text,
+          translation: (map['translation'] as String?)?.trim(),
+        ));
+      }
+      debugPrint('[Gemini transcribe] Valid segments after filtering: ${segments.length}');
+      return segments;
+    } catch (e) {
+      debugPrint('[Gemini transcribe] Failed: $e');
+      rethrow;
+    }
+  }
+
+  /// Transcribe audio using Gemini's audio understanding capability.
+  /// Sends the audio file inline and gets back timestamped segments.
+  Future<List<RawCaptionSegment>> transcribeAudioWithGemini({
+    required String audioFilePath,
+  }) async {
+    final file = File(audioFilePath);
+    final bytes = await file.readAsBytes();
+
+    // 20MB inline limit
+    if (bytes.length > 20 * 1024 * 1024) {
+      throw Exception('Audio file exceeds 20MB inline limit');
+    }
+
+    // Determine MIME type from extension
+    final ext = audioFilePath.split('.').last.toLowerCase();
+    final mimeType = switch (ext) {
+      'mp3' => 'audio/mpeg',
+      'mp4' || 'm4a' => 'audio/mp4',
+      'webm' => 'audio/webm',
+      'ogg' => 'audio/ogg',
+      'wav' => 'audio/wav',
+      'flac' => 'audio/flac',
+      _ => 'audio/mpeg',
+    };
+
+    const prompt = '''
+Transcribe this audio into English segments with accurate timestamps.
+Return a JSON object with a "segments" array where each element has:
+- "start_ms": integer, start time in milliseconds
+- "end_ms": integer, end time in milliseconds
+- "text": string, the transcribed text for that segment
+
+Split into segments of 1-3 sentences each. Be precise with timestamps.
+''';
+
+    try {
+      debugPrint('[Gemini audio] Sending ${bytes.length} bytes ($mimeType) to Gemini...');
+      final result = await _geminiClient.generateStructuredWithAudio(
+        prompt: prompt,
+        audioBytes: bytes,
+        mimeType: mimeType,
+      );
+      debugPrint('[Gemini audio] Raw result keys: ${result.keys.toList()}');
+
+      final segmentsList = result['segments'] as List? ?? [];
+      debugPrint('[Gemini audio] Segments count from JSON: ${segmentsList.length}');
+
+      final segments = <RawCaptionSegment>[];
+      for (int i = 0; i < segmentsList.length; i++) {
+        final map = segmentsList[i] as Map<String, dynamic>;
+        final startMs = (map['start_ms'] as num?)?.toInt();
+        final endMs = (map['end_ms'] as num?)?.toInt();
+        final text = (map['text'] as String?)?.trim() ?? '';
+        if (text.isEmpty || startMs == null || endMs == null) {
+          debugPrint('[Gemini audio] Skipped segment $i: '
+              'start=$startMs end=$endMs text="${text.isEmpty ? "<empty>" : text}"');
+          continue;
+        }
+        segments.add(RawCaptionSegment(
+          startMs: startMs,
+          endMs: endMs,
+          text: text,
+        ));
+      }
+      debugPrint('[Gemini audio] Valid segments after filtering: ${segments.length}');
+      return segments;
+    } catch (e) {
+      debugPrint('[Gemini audio] Transcription failed: $e');
+      rethrow;
     }
   }
 
@@ -167,5 +337,60 @@ $rawText
         text: (map['text'] as String).trim(),
       );
     }).toList();
+  }
+
+  /// Translate already-generated English segments into Chinese using text generation.
+  /// Returns new segments with translations filled in.
+  Future<List<RawCaptionSegment>> translateSegments(
+    List<RawCaptionSegment> segments,
+  ) async {
+    if (segments.isEmpty) return segments;
+
+    // Build a numbered list of texts for batch translation.
+    final buffer = StringBuffer();
+    for (int i = 0; i < segments.length; i++) {
+      buffer.writeln('$i: ${segments[i].text}');
+    }
+
+    final prompt = '''
+Translate each numbered English sentence below into Chinese.
+Return a JSON object with a "translations" array where each element has:
+- "index": integer, the sentence number
+- "translation": string, the Chinese translation
+
+Sentences:
+$buffer''';
+
+    try {
+      debugPrint('[translateSegments] Translating ${segments.length} segments...');
+      final result = await _geminiClient.generateStructured(prompt: prompt);
+      final translations = result['translations'] as List? ?? [];
+
+      // Build index → translation map.
+      final translationMap = <int, String>{};
+      for (final t in translations) {
+        final map = t as Map<String, dynamic>;
+        final index = (map['index'] as num?)?.toInt();
+        final text = (map['translation'] as String?)?.trim();
+        if (index != null && text != null && text.isNotEmpty) {
+          translationMap[index] = text;
+        }
+      }
+
+      debugPrint('[translateSegments] Got ${translationMap.length} translations');
+      return [
+        for (int i = 0; i < segments.length; i++)
+          RawCaptionSegment(
+            startMs: segments[i].startMs,
+            endMs: segments[i].endMs,
+            text: segments[i].text,
+            translation: translationMap[i] ?? segments[i].translation,
+          ),
+      ];
+    } catch (e) {
+      debugPrint('[translateSegments] Translation failed: $e');
+      // Return original segments without translation rather than failing.
+      return segments;
+    }
   }
 }

@@ -22,6 +22,11 @@ class VideoStudyRepositoryImpl implements VideoStudyRepository {
   }
 
   @override
+  Future<VideoResource?> getVideoResourceByYoutubeId(String youtubeVideoId) {
+    return _localDatasource.getVideoResourceByYoutubeId(youtubeVideoId);
+  }
+
+  @override
   Future<void> saveVideoResource(VideoResource videoResource) {
     return _localDatasource.insertVideoResource(videoResource);
   }

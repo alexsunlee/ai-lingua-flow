@@ -63,14 +63,18 @@ You are a language-learning assistant. The user is studying English text and nee
 Below are paragraphs of English text, each prefixed with an index number in square brackets.
 
 For EACH paragraph, provide:
-1. "translation" — a natural, accurate Chinese (简体中文) translation.
-2. "knowledge" — a list of key phrases or grammar points worth learning. Each item should have "phrase" (the English phrase), "explanation" (brief explanation in Chinese), and "pos" (part of speech, e.g. noun, verb, phrase).
+1. "sentences" — split the paragraph into individual sentences. For each sentence, give "original" (the English sentence) and "translation" (natural Chinese translation).
+2. "key_phrases" — important phrases, collocations, or grammar points worth learning. Each item should have:
+   - "phrase": the English phrase
+   - "explanation": brief explanation in Chinese
+   - "pos": part of speech (e.g. noun phrase, verb phrase, idiom, grammar)
+   - "difficulty": one of "beginner", "intermediate", or "advanced"
 3. "summary" — a one-sentence Chinese summary of the paragraph's main idea.
 
 Return a JSON object with a single key "paragraphs" whose value is an array of objects, one per paragraph, in the same order. Each object must have:
 - "index": the paragraph index (integer)
-- "translation": string
-- "knowledge": array of {"phrase": string, "explanation": string, "pos": string}
+- "sentences": array of {"original": string, "translation": string}
+- "key_phrases": array of {"phrase": string, "explanation": string, "pos": string, "difficulty": string}
 - "summary": string
 
 TEXT:
@@ -97,15 +101,21 @@ $numberedParagraphs
           ? paragraphResults[i] as Map<String, dynamic>
           : null;
 
+      final knowledgeObj = <String, dynamic>{};
+      if (matched?['sentences'] != null) {
+        knowledgeObj['sentences'] = matched!['sentences'];
+      }
+      if (matched?['key_phrases'] != null) {
+        knowledgeObj['key_phrases'] = matched!['key_phrases'];
+      }
+
       paragraphs.add(Paragraph(
         id: uuid.v4(),
         studyTextId: studyTextId,
         paragraphIndex: i,
         originalText: paragraphTexts[i],
-        translatedText: matched?['translation'] as String?,
-        knowledgeJson: matched?['knowledge'] != null
-            ? jsonEncode(matched!['knowledge'])
-            : null,
+        translatedText: null,
+        knowledgeJson: knowledgeObj.isNotEmpty ? jsonEncode(knowledgeObj) : null,
         summary: matched?['summary'] as String?,
       ));
     }

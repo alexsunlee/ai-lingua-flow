@@ -8,6 +8,9 @@ abstract class VideoStudyRepository {
   /// Retrieve a single video resource by [id], with its segments attached.
   Future<VideoResource?> getVideoResourceById(String id);
 
+  /// Retrieve a video resource by its YouTube video ID.
+  Future<VideoResource?> getVideoResourceByYoutubeId(String youtubeVideoId);
+
   /// Insert or update a video resource.
   Future<void> saveVideoResource(VideoResource videoResource);
 

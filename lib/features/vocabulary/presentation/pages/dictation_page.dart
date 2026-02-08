@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../injection.dart';
-import '../../../../services/tts_service.dart';
+import '../../../../services/gemini_tts_service.dart';
 import '../../domain/entities/vocabulary_entry.dart';
 import '../providers/vocabulary_providers.dart';
 
@@ -54,7 +54,7 @@ class _DictationPageState extends ConsumerState<DictationPage> {
   void _playCurrentWord() {
     final entry = _currentEntry;
     if (entry != null) {
-      final tts = getIt<TtsService>();
+      final tts = getIt<GeminiTtsService>();
       tts.speak(entry.word);
     }
   }
@@ -121,7 +121,7 @@ class _DictationPageState extends ConsumerState<DictationPage> {
         title: const Text('听写练习'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.go('/vocabulary'),
+          onPressed: () => context.go('/review'),
         ),
       ),
       body: vocabularyAsync.when(
@@ -346,7 +346,7 @@ class _DictationPageState extends ConsumerState<DictationPage> {
                 ),
                 const SizedBox(width: 16),
                 ElevatedButton(
-                  onPressed: () => context.go('/vocabulary'),
+                  onPressed: () => context.go('/review'),
                   child: const Text('返回生词本'),
                 ),
               ],

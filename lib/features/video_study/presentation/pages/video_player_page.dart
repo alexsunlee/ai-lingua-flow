@@ -9,7 +9,7 @@ import '../../../../core/widgets/interactive_text.dart';
 import '../../../../core/widgets/word_card_popup.dart';
 import '../../../../injection.dart';
 import '../../../../services/dictionary_service.dart';
-import '../../../../services/tts_service.dart';
+import '../../../../services/gemini_tts_service.dart';
 import '../providers/video_study_providers.dart';
 
 class VideoPlayerPage extends ConsumerStatefulWidget {
@@ -26,9 +26,12 @@ class _VideoPlayerPageState extends ConsumerState<VideoPlayerPage> {
   ChewieController? _chewieController;
   int _activeSegmentIndex = -1;
   final _scrollController = ScrollController();
+  bool _videoInitFailed = false;
+  OverlayEntry? _activeOverlay;
 
   @override
   void dispose() {
+    _dismissOverlay();
     _chewieController?.dispose();
     _videoController?.dispose();
     _scrollController.dispose();
@@ -38,21 +41,25 @@ class _VideoPlayerPageState extends ConsumerState<VideoPlayerPage> {
   void _initVideo(String url) {
     _videoController = VideoPlayerController.networkUrl(Uri.parse(url))
       ..initialize().then((_) {
-        setState(() {
-          _chewieController = ChewieController(
-            videoPlayerController: _videoController!,
-            autoPlay: false,
-            aspectRatio: 16 / 9,
-          );
-        });
-
-        // Position listener for transcript sync
-        _videoController!.addListener(_onPositionChanged);
+        if (mounted) {
+          setState(() {
+            _chewieController = ChewieController(
+              videoPlayerController: _videoController!,
+              autoPlay: false,
+              aspectRatio: _videoController!.value.aspectRatio,
+            );
+          });
+          _videoController!.addListener(_onPositionChanged);
+        }
+      }).catchError((e) {
+        debugPrint('Video init failed: $e');
+        if (mounted) setState(() => _videoInitFailed = true);
       });
   }
 
   void _onPositionChanged() {
-    final video = ref.read(videoResourceDetailProvider(widget.videoResourceId));
+    final video =
+        ref.read(videoResourceDetailProvider(widget.videoResourceId));
     video.whenData((resource) {
       if (resource?.segments == null) return;
       final posMs = _videoController!.value.position.inMilliseconds;
@@ -64,14 +71,14 @@ class _VideoPlayerPageState extends ConsumerState<VideoPlayerPage> {
             setState(() => _activeSegmentIndex = i);
             _scrollToSegment(i);
           }
-          break;
+          return;
         }
       }
     });
   }
 
   void _scrollToSegment(int index) {
-    final offset = index * 80.0; // approximate height per segment
+    final offset = index * 80.0;
     if (_scrollController.hasClients) {
       _scrollController.animateTo(
         offset,
@@ -88,11 +95,21 @@ class _VideoPlayerPageState extends ConsumerState<VideoPlayerPage> {
     }
   }
 
+  void _dismissOverlay() {
+    final overlay = _activeOverlay;
+    _activeOverlay = null;
+    if (overlay != null && overlay.mounted) {
+      overlay.remove();
+    }
+  }
+
   void _onWordTap(String word, Offset position) async {
     final dictService = getIt<DictionaryService>();
-    final ttsService = getIt<TtsService>();
+    final ttsService = getIt<GeminiTtsService>();
 
-    WordCardPopup.show(
+    _dismissOverlay();
+
+    _activeOverlay = WordCardPopup.showOverlay(
       context,
       position: position,
       data: WordCardData(word: word),
@@ -102,7 +119,8 @@ class _VideoPlayerPageState extends ConsumerState<VideoPlayerPage> {
     try {
       final cardData = await dictService.lookup(word);
       if (mounted) {
-        WordCardPopup.show(
+        _dismissOverlay();
+        _activeOverlay = WordCardPopup.showOverlay(
           context,
           position: position,
           data: cardData,
@@ -111,16 +129,29 @@ class _VideoPlayerPageState extends ConsumerState<VideoPlayerPage> {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(content: Text('"${cardData.word}" 已添加到生词本')),
             );
+            _dismissOverlay();
           },
+          onClose: _dismissOverlay,
         );
       }
-    } catch (_) {}
+    } catch (_) {
+      if (mounted) {
+        _dismissOverlay();
+        _activeOverlay = WordCardPopup.showOverlay(
+          context,
+          position: position,
+          data: WordCardData(word: word, explanation: '查询失败'),
+          onClose: _dismissOverlay,
+        );
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final video = ref.watch(videoResourceDetailProvider(widget.videoResourceId));
+    final video =
+        ref.watch(videoResourceDetailProvider(widget.videoResourceId));
 
     return Scaffold(
       appBar: AppBar(title: const Text('视频学习')),
@@ -130,14 +161,29 @@ class _VideoPlayerPageState extends ConsumerState<VideoPlayerPage> {
             return const Center(child: Text('未找到视频'));
           }
 
-          // Initialize video controller if needed
-          if (_videoController == null) {
-            // Use youtube URL for now — real implementation would use extracted stream URL
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (resource.audioFilePath != null) {
-                _initVideo(resource.audioFilePath!);
-              }
-            });
+          // Resolve stream URL and init video player
+          if (_videoController == null && !_videoInitFailed) {
+            final streamUrl = ref.watch(
+                videoStreamUrlProvider(resource.youtubeVideoId));
+            streamUrl.when(
+              data: (url) {
+                if (_videoController == null) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (_videoController == null && mounted) {
+                      _initVideo(url);
+                    }
+                  });
+                }
+              },
+              loading: () {},
+              error: (_, _) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted && !_videoInitFailed) {
+                    setState(() => _videoInitFailed = true);
+                  }
+                });
+              },
+            );
           }
 
           return Column(
@@ -149,8 +195,23 @@ class _VideoPlayerPageState extends ConsumerState<VideoPlayerPage> {
                     ? Chewie(controller: _chewieController!)
                     : Container(
                         color: Colors.black,
-                        child: const Center(
-                          child: CircularProgressIndicator(color: Colors.white),
+                        child: Center(
+                          child: _videoInitFailed
+                              ? Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.error_outline,
+                                        color: Colors.white54, size: 36),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      '视频加载失败',
+                                      style: theme.textTheme.bodySmall
+                                          ?.copyWith(color: Colors.white54),
+                                    ),
+                                  ],
+                                )
+                              : const CircularProgressIndicator(
+                                  color: Colors.white),
                         ),
                       ),
               ),
@@ -209,11 +270,11 @@ class _VideoPlayerPageState extends ConsumerState<VideoPlayerPage> {
                                 children: [
                                   Text(
                                     _formatMs(segment.startMs),
-                                    style: theme.textTheme.bodySmall?.copyWith(
+                                    style:
+                                        theme.textTheme.bodySmall?.copyWith(
                                       color: theme.colorScheme.primary,
-                                      fontWeight: isActive
-                                          ? FontWeight.bold
-                                          : null,
+                                      fontWeight:
+                                          isActive ? FontWeight.bold : null,
                                     ),
                                   ),
                                   const SizedBox(height: 4),
@@ -225,8 +286,8 @@ class _VideoPlayerPageState extends ConsumerState<VideoPlayerPage> {
                                     const SizedBox(height: 4),
                                     Text(
                                       segment.translatedText!,
-                                      style:
-                                          theme.textTheme.bodySmall?.copyWith(
+                                      style: theme.textTheme.bodySmall
+                                          ?.copyWith(
                                         color: theme.colorScheme.secondary,
                                       ),
                                     ),
@@ -242,15 +303,20 @@ class _VideoPlayerPageState extends ConsumerState<VideoPlayerPage> {
           );
         },
         loading: () => const ShimmerLoading.detail(),
-        error: (e, _) => ErrorRetryWidget(message: '加载失败: $e', onRetry: () => ref.invalidate(videoResourceDetailProvider(widget.videoResourceId))),
+        error: (e, _) => ErrorRetryWidget(
+            message: '加载失败: $e',
+            onRetry: () => ref.invalidate(
+                videoResourceDetailProvider(widget.videoResourceId))),
       ),
     );
   }
 
   String _formatMs(int ms) {
     final duration = Duration(milliseconds: ms);
-    final minutes = duration.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final seconds = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
+    final minutes =
+        duration.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final seconds =
+        duration.inSeconds.remainder(60).toString().padLeft(2, '0');
     return '$minutes:$seconds';
   }
 }

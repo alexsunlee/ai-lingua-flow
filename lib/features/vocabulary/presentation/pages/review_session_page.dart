@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../injection.dart';
-import '../../../../services/tts_service.dart';
+import '../../../../services/gemini_tts_service.dart';
 import '../providers/vocabulary_providers.dart';
 
 /// Quality rating labels in Chinese, mapped to SM-2 quality values 0-5.
@@ -55,7 +55,7 @@ class ReviewSessionPage extends ConsumerWidget {
           icon: const Icon(Icons.close),
           onPressed: () {
             ref.read(reviewSessionProvider.notifier).reset();
-            context.go('/vocabulary');
+            context.go('/review');
           },
         ),
       ),
@@ -118,7 +118,7 @@ class ReviewSessionPage extends ConsumerWidget {
                             color: colorScheme.primary,
                           ),
                           onPressed: () {
-                            final tts = getIt<TtsService>();
+                            final tts = getIt<GeminiTtsService>();
                             tts.speak(currentEntry.word);
                           },
                         ),
@@ -347,7 +347,7 @@ class _CompletionSummary extends ConsumerWidget {
             ref.read(reviewSessionProvider.notifier).reset();
             ref.read(dueReviewsProvider.notifier).refresh();
             ref.read(vocabularyListProvider.notifier).refresh();
-            context.go('/vocabulary');
+            context.go('/review');
           },
         ),
       ),
@@ -399,7 +399,7 @@ class _CompletionSummary extends ConsumerWidget {
                   ref.read(reviewSessionProvider.notifier).reset();
                   ref.read(dueReviewsProvider.notifier).refresh();
                   ref.read(vocabularyListProvider.notifier).refresh();
-                  context.go('/vocabulary');
+                  context.go('/review');
                 },
                 child: const Text('返回生词本'),
               ),

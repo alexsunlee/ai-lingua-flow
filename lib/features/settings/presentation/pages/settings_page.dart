@@ -8,6 +8,7 @@ import '../../../../core/constants/app_constants.dart';
 import '../../../../core/network/gemini_client.dart';
 import '../../../../injection.dart';
 import '../../../../services/data_export_service.dart';
+import '../../../../services/gemini_tts_service.dart';
 
 class SettingsPage extends ConsumerStatefulWidget {
   const SettingsPage({super.key});
@@ -22,11 +23,13 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   bool _isValidating = false;
   bool _isKeyConfigured = false;
   bool _obscureKey = true;
+  String _selectedVoice = AppConstants.geminiTtsDefaultVoice;
 
   @override
   void initState() {
     super.initState();
     _loadApiKey();
+    _loadVoicePreference();
   }
 
   Future<void> _loadApiKey() async {
@@ -36,6 +39,14 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         _apiKeyController.text = key;
         _isKeyConfigured = true;
       });
+    }
+  }
+
+  Future<void> _loadVoicePreference() async {
+    final voice = await _storage.read(key: AppConstants.keyGeminiTtsVoice);
+    if (voice != null && AppConstants.geminiTtsVoices.contains(voice)) {
+      setState(() => _selectedVoice = voice);
+      getIt<GeminiTtsService>().setVoice(voice);
     }
   }
 
@@ -155,6 +166,66 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                               ),
                             )
                           : const Text('验证并保存'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // AI Voice Section
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.record_voice_over,
+                          color: theme.colorScheme.primary),
+                      const SizedBox(width: 8),
+                      Text('AI 语音设置', style: theme.textTheme.headlineSmall),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '选择 Gemini AI 语音（需要 API 密钥和网络）',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    initialValue: _selectedVoice,
+                    decoration: const InputDecoration(
+                      labelText: '语音',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: AppConstants.geminiTtsVoices
+                        .map((voice) => DropdownMenuItem(
+                              value: voice,
+                              child: Text(voice),
+                            ))
+                        .toList(),
+                    onChanged: (voice) async {
+                      if (voice == null) return;
+                      setState(() => _selectedVoice = voice);
+                      getIt<GeminiTtsService>().setVoice(voice);
+                      await _storage.write(
+                        key: AppConstants.keyGeminiTtsVoice,
+                        value: voice,
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        getIt<GeminiTtsService>().speak('Hello, how are you?');
+                      },
+                      icon: const Icon(Icons.play_arrow, size: 18),
+                      label: const Text('试听'),
                     ),
                   ),
                 ],

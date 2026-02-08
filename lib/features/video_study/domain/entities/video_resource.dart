@@ -13,6 +13,7 @@ class VideoResource {
   final DateTime createdAt;
   final DateTime updatedAt;
   final List<TranscriptSegment>? segments;
+  final int segmentCount; // Runtime field, populated by list query
 
   const VideoResource({
     required this.id,
@@ -27,6 +28,7 @@ class VideoResource {
     required this.createdAt,
     required this.updatedAt,
     this.segments,
+    this.segmentCount = 0,
   });
 
   VideoResource copyWith({
@@ -42,6 +44,7 @@ class VideoResource {
     DateTime? createdAt,
     DateTime? updatedAt,
     List<TranscriptSegment>? segments,
+    int? segmentCount,
   }) {
     return VideoResource(
       id: id ?? this.id,
@@ -56,6 +59,7 @@ class VideoResource {
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       segments: segments ?? this.segments,
+      segmentCount: segmentCount ?? this.segmentCount,
     );
   }
 }
