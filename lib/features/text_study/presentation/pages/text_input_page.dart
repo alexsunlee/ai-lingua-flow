@@ -24,6 +24,29 @@ class _TextInputPageState extends ConsumerState<TextInputPage> {
     super.dispose();
   }
 
+  Future<bool?> _confirmDeleteText(BuildContext context, String title) {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('删除记录'),
+        content: Text('确定要删除 "$title" 吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _analyzeText() async {
     final text = _textController.text.trim();
     if (text.isEmpty) {
@@ -124,7 +147,10 @@ class _TextInputPageState extends ConsumerState<TextInputPage> {
           Expanded(
             child: studyTexts.when(
               data: (texts) {
-                if (texts.isEmpty) {
+                final textOnly = texts
+                    .where((t) => !t.title.startsWith('图片学习'))
+                    .toList();
+                if (textOnly.isEmpty) {
                   return const EmptyStateWidget(
                     icon: Icons.article_outlined,
                     title: '还没有学习记录',
@@ -133,21 +159,42 @@ class _TextInputPageState extends ConsumerState<TextInputPage> {
                 }
                 return ListView.builder(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: texts.length,
+                  itemCount: textOnly.length,
                   itemBuilder: (context, index) {
-                    final text = texts[index];
-                    return Card(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      child: ListTile(
-                        title: Text(text.title),
-                        subtitle: Text(
-                          text.originalText,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
+                    final text = textOnly[index];
+                    return Dismissible(
+                      key: ValueKey(text.id),
+                      direction: DismissDirection.endToStart,
+                      background: Container(
+                        alignment: Alignment.centerRight,
+                        padding: const EdgeInsets.only(right: 24),
+                        color: theme.colorScheme.error,
+                        child:
+                            const Icon(Icons.delete, color: Colors.white),
+                      ),
+                      confirmDismiss: (_) async {
+                        final confirmed =
+                            await _confirmDeleteText(context, text.title);
+                        if (confirmed == true) {
+                          ref
+                              .read(studyTextsListProvider.notifier)
+                              .delete(text.id);
+                        }
+                        return false;
+                      },
+                      child: Card(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        child: ListTile(
+                          title: Text(text.title),
+                          subtitle: Text(
+                            text.originalText,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () =>
+                              context.go('/text-study/reader/${text.id}'),
                         ),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: () =>
-                            context.go('/text-study/reader/${text.id}'),
                       ),
                     );
                   },

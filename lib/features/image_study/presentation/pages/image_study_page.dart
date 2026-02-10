@@ -62,6 +62,7 @@ class _ImageStudyPageState extends ConsumerState<ImageStudyPage> {
           await analyzeText(title: title, text: description);
 
       if (mounted) {
+        ref.invalidate(studyTextsListProvider);
         context.go('/image-study/reader/$studyTextId');
       }
     } catch (e) {
@@ -74,6 +75,29 @@ class _ImageStudyPageState extends ConsumerState<ImageStudyPage> {
     } finally {
       if (mounted) setState(() => _isProcessingImage = false);
     }
+  }
+
+  Future<bool?> _confirmDeleteImage(BuildContext context, String title) {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('删除记录'),
+        content: Text('确定要删除 "$title" 吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
   }
 
   String _inferMimeType(String path) {
@@ -159,28 +183,49 @@ class _ImageStudyPageState extends ConsumerState<ImageStudyPage> {
                     itemCount: imageTexts.length,
                     itemBuilder: (context, index) {
                       final text = imageTexts[index];
-                      return Card(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        child: ListTile(
-                          leading: Icon(
-                            Icons.image,
-                            color: theme.colorScheme.primary,
+                      return Dismissible(
+                        key: ValueKey(text.id),
+                        direction: DismissDirection.endToStart,
+                        background: Container(
+                          alignment: Alignment.centerRight,
+                          padding: const EdgeInsets.only(right: 24),
+                          color: theme.colorScheme.error,
+                          child:
+                              const Icon(Icons.delete, color: Colors.white),
+                        ),
+                        confirmDismiss: (_) async {
+                          final confirmed =
+                              await _confirmDeleteImage(context, text.title);
+                          if (confirmed == true) {
+                            ref
+                                .read(studyTextsListProvider.notifier)
+                                .delete(text.id);
+                          }
+                          return false;
+                        },
+                        child: Card(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          child: ListTile(
+                            leading: Icon(
+                              Icons.image,
+                              color: theme.colorScheme.primary,
+                            ),
+                            title: Text(
+                              text.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            subtitle: Text(
+                              text.originalText.isNotEmpty
+                                  ? text.originalText
+                                  : '${text.createdAt.month}/${text.createdAt.day}',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            trailing: const Icon(Icons.chevron_right),
+                            onTap: () =>
+                                context.go('/image-study/reader/${text.id}'),
                           ),
-                          title: Text(
-                            text.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          subtitle: Text(
-                            text.originalText.isNotEmpty
-                                ? text.originalText
-                                : '${text.createdAt.month}/${text.createdAt.day}',
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          trailing: const Icon(Icons.chevron_right),
-                          onTap: () =>
-                              context.go('/image-study/reader/${text.id}'),
                         ),
                       );
                     },
