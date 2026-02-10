@@ -73,6 +73,9 @@ dependencies:
   # Image picker (gallery + camera)
   image_picker: ^1.1.2
 
+dependency_overrides:
+  path_provider_foundation: 2.4.3
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

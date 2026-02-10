@@ -22,14 +22,14 @@ class RegenerateSubtitles {
   Future<bool> call({required VideoResource videoResource}) async {
     debugPrint('[RegenerateSubtitles] Starting for video: '
         '${videoResource.youtubeVideoId} (${videoResource.title})');
-    debugPrint('[RegenerateSubtitles] YouTube URL: ${videoResource.youtubeUrl}');
 
     // 1. Try YouTube captions first.
     var rawSegments = await _youtubeDatasource
         .extractCaptions(videoResource.youtubeVideoId);
-    debugPrint('[RegenerateSubtitles] YouTube captions: ${rawSegments.length}');
+    debugPrint(
+        '[RegenerateSubtitles] YouTube captions: ${rawSegments.length}');
 
-    // 2. If empty, send YouTube URL directly to Gemini for transcription.
+    // 2. If empty, use Gemini video understanding via URL (no download).
     if (rawSegments.isEmpty) {
       debugPrint('[RegenerateSubtitles] No YouTube captions, '
           'using Gemini video understanding...');
@@ -37,15 +37,29 @@ class RegenerateSubtitles {
         rawSegments = await _youtubeDatasource.transcribeVideoWithGemini(
           youtubeUrl: videoResource.youtubeUrl,
         );
-        debugPrint(
-            '[RegenerateSubtitles] Gemini returned: ${rawSegments.length} segments');
+        debugPrint('[RegenerateSubtitles] Gemini returned: '
+            '${rawSegments.length} segments');
+
+        // Validate timestamps — retry if all 00:00.
+        if (_youtubeDatasource.hasAllZeroTimestamps(rawSegments)) {
+          debugPrint(
+              '[RegenerateSubtitles] All timestamps 00:00, retrying...');
+          rawSegments = await _youtubeDatasource.transcribeVideoWithGemini(
+            youtubeUrl: videoResource.youtubeUrl,
+            isRetry: true,
+          );
+          debugPrint('[RegenerateSubtitles] Retry returned: '
+              '${rawSegments.length} segments');
+        }
       } catch (e) {
-        debugPrint('[RegenerateSubtitles] Gemini video transcription failed: $e');
+        debugPrint(
+            '[RegenerateSubtitles] Gemini transcription failed: $e');
       }
     }
 
     if (rawSegments.isEmpty) {
-      debugPrint('[RegenerateSubtitles] No segments from any source, returning false');
+      debugPrint(
+          '[RegenerateSubtitles] No segments from any source, returning false');
       return false;
     }
 
@@ -66,7 +80,8 @@ class RegenerateSubtitles {
     }).toList();
 
     await _localDatasource.insertSegments(segments);
-    debugPrint('[RegenerateSubtitles] Saved ${segments.length} segments to DB');
+    debugPrint(
+        '[RegenerateSubtitles] Saved ${segments.length} segments to DB');
     return true;
   }
 }

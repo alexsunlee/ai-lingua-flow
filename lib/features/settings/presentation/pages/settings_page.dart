@@ -34,6 +34,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
   Future<void> _loadApiKey() async {
     final key = await _storage.read(key: AppConstants.keyGeminiApiKey);
+    if (!mounted) return;
     if (key != null && key.isNotEmpty) {
       setState(() {
         _apiKeyController.text = key;
@@ -44,6 +45,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
   Future<void> _loadVoicePreference() async {
     final voice = await _storage.read(key: AppConstants.keyGeminiTtsVoice);
+    if (!mounted) return;
     if (voice != null && AppConstants.geminiTtsVoices.contains(voice)) {
       setState(() => _selectedVoice = voice);
       getIt<GeminiTtsService>().setVoice(voice);
@@ -62,6 +64,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     try {
       final geminiClient = getIt<GeminiClient>();
       final isValid = await geminiClient.validateApiKey(key);
+      if (!mounted) return;
 
       if (isValid) {
         await _storage.write(key: AppConstants.keyGeminiApiKey, value: key);
@@ -72,9 +75,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         _showSnackBar('API 密钥无效，请检查后重试');
       }
     } catch (e) {
+      if (!mounted) return;
       _showSnackBar('验证失败: $e');
     } finally {
-      setState(() => _isValidating = false);
+      if (mounted) setState(() => _isValidating = false);
     }
   }
 
@@ -328,7 +332,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         _showSnackBar('备份已导出: $path');
       }
     } catch (e) {
-      _showSnackBar('导出失败: $e');
+      if (mounted) _showSnackBar('导出失败: $e');
     }
   }
 
@@ -346,7 +350,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         _showSnackBar('已导入 $count 条记录');
       }
     } catch (e) {
-      _showSnackBar('导入失败: $e');
+      if (mounted) _showSnackBar('导入失败: $e');
     }
   }
 

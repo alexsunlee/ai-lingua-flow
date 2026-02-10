@@ -136,16 +136,21 @@ class YouTubeDatasource {
 
   /// Download the audio stream of a video and save it locally.
   /// Returns the file path of the saved audio file.
-  /// Times out after 60 seconds to prevent hanging on stalled streams.
+  /// Uses lowest bitrate (sufficient for speech transcription) and
+  /// times out after 180 seconds to handle slow connections.
   Future<String> downloadAudio(String videoId) async {
     final yt = YoutubeExplode();
     String? filePath;
     try {
       debugPrint('[downloadAudio] Fetching stream manifest for $videoId...');
       final manifest = await yt.videos.streamsClient.getManifest(videoId);
-      final audioStreamInfo = manifest.audioOnly.withHighestBitrate();
+
+      // Use lowest bitrate — we only need speech, not music quality.
+      final audioStreams = manifest.audioOnly.sortByBitrate();
+      final audioStreamInfo = audioStreams.first;
       debugPrint('[downloadAudio] Got manifest — '
           'container=${audioStreamInfo.container.name}, '
+          'bitrate=${audioStreamInfo.bitrate.kiloBitsPerSecond}kbps, '
           'size=${audioStreamInfo.size.totalBytes} bytes');
 
       final audioStream = yt.videos.streamsClient.get(audioStreamInfo);
@@ -163,17 +168,18 @@ class YouTubeDatasource {
         await fileStream.flush();
         await fileStream.close();
       })()
-          .timeout(const Duration(seconds: 60));
+          .timeout(const Duration(seconds: 180));
 
-      debugPrint('[downloadAudio] Download complete: $filePath');
+      debugPrint('[downloadAudio] Download complete: $filePath '
+          '(${await file.length()} bytes)');
       return filePath;
     } on TimeoutException {
-      debugPrint('[downloadAudio] Timed out after 60s for $videoId');
+      debugPrint('[downloadAudio] Timed out after 180s for $videoId');
       if (filePath != null) {
         final partial = File(filePath);
         if (await partial.exists()) await partial.delete();
       }
-      throw Exception('Audio download timed out after 60 seconds');
+      throw Exception('Audio download timed out after 180 seconds');
     } finally {
       yt.close();
     }
@@ -182,21 +188,50 @@ class YouTubeDatasource {
   /// Transcribe a YouTube video using Gemini's native video understanding.
   /// Sends the YouTube URL directly to Gemini — no download needed.
   /// Returns English text + timestamps only; translation is done separately.
+  ///
+  /// If [isRetry] is true, uses a more explicit prompt to force non-zero
+  /// timestamps (called automatically when the first attempt returns all 0s).
   Future<List<RawCaptionSegment>> transcribeVideoWithGemini({
     required String youtubeUrl,
+    bool isRetry = false,
   }) async {
-    const prompt = '''
-Transcribe the spoken English in this video with accurate timestamps.
-Return a JSON object with a "segments" array where each element has:
-- "start_ms": integer, start time in milliseconds
-- "end_ms": integer, end time in milliseconds
-- "text": string, the transcribed English text for that segment
+    final prompt = isRetry
+        ? '''
+Watch this YouTube video from beginning to end. The video has audio speech.
+Transcribe ONLY the spoken words you hear, with the EXACT time each segment is spoken.
 
-Split into segments of 1-3 sentences each. Be precise with timestamps.
+Use the video timeline to determine timestamps. For example, if someone starts
+speaking at the 15-second mark, that segment's start_ms should be 15000.
+
+IMPORTANT RULES:
+- start_ms and end_ms must NOT all be 0. Use the actual video timeline.
+- The first segment's start_ms should match when speech actually begins in the video.
+- Segments must be in chronological order with increasing timestamps.
+- Each segment should be 5-15 seconds long.
+
+Return a JSON object: {"segments": [{"start_ms": <int>, "end_ms": <int>, "text": "<spoken words>"}]}
+'''
+        : '''
+Watch this YouTube video and transcribe all spoken English with precise timestamps from the video timeline.
+
+For each segment of 1-3 sentences, record:
+- The exact moment (in milliseconds) when the speech starts in the video
+- The exact moment when the speech ends
+- The transcribed text
+
+Return a JSON object with a "segments" array. Each element:
+- "start_ms": integer, milliseconds from video start when speech begins (use actual video time, NOT 0 for all)
+- "end_ms": integer, milliseconds from video start when speech ends (must be > start_ms)
+- "text": string, the spoken English text
+
+Example for a segment starting at 1 minute 30 seconds: {"start_ms": 90000, "end_ms": 95000, "text": "Hello everyone"}
+
+Timestamps must be monotonically increasing and reflect the real video timeline.
 ''';
 
     try {
-      debugPrint('[Gemini transcribe] Sending video URL to Gemini: $youtubeUrl');
+      debugPrint('[Gemini transcribe] Sending video URL to Gemini: $youtubeUrl'
+          '${isRetry ? " (retry)" : ""}');
       final result = await _geminiClient.generateStructuredWithVideo(
         prompt: prompt,
         videoUri: youtubeUrl,
@@ -232,6 +267,13 @@ Split into segments of 1-3 sentences each. Be precise with timestamps.
     }
   }
 
+  /// Returns true if all segments have start_ms == 0 and end_ms == 0,
+  /// which indicates the model failed to generate real timestamps.
+  bool hasAllZeroTimestamps(List<RawCaptionSegment> segments) {
+    if (segments.isEmpty) return false;
+    return segments.every((s) => s.startMs == 0 && s.endMs == 0);
+  }
+
   /// Transcribe audio using Gemini's audio understanding capability.
   /// Sends the audio file inline and gets back timestamped segments.
   Future<List<RawCaptionSegment>> transcribeAudioWithGemini({
@@ -258,13 +300,21 @@ Split into segments of 1-3 sentences each. Be precise with timestamps.
     };
 
     const prompt = '''
-Transcribe this audio into English segments with accurate timestamps.
-Return a JSON object with a "segments" array where each element has:
-- "start_ms": integer, start time in milliseconds
-- "end_ms": integer, end time in milliseconds
-- "text": string, the transcribed text for that segment
+You are a precise audio transcription engine.
+Listen to this audio carefully and transcribe the spoken English into segments.
 
-Split into segments of 1-3 sentences each. Be precise with timestamps.
+CRITICAL: You MUST provide accurate, non-zero timestamps based on when words are actually spoken.
+- The first segment should start at the actual moment speech begins (NOT at 0 unless speech truly starts immediately).
+- Each subsequent segment must have a start_ms GREATER than the previous segment's start_ms.
+- end_ms must always be greater than start_ms for the same segment.
+- Timestamps must reflect the real timing of speech in the audio.
+
+Return a JSON object with a "segments" array where each element has:
+- "start_ms": integer, start time in milliseconds when this segment's speech begins
+- "end_ms": integer, end time in milliseconds when this segment's speech ends
+- "text": string, the transcribed English text for that segment
+
+Split into segments of 1-3 sentences each. Ensure timestamps are monotonically increasing and match the actual audio timing.
 ''';
 
     try {

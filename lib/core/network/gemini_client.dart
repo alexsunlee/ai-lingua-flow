@@ -393,12 +393,43 @@ class GeminiClient {
         attempt++;
         if (attempt >= AppConstants.geminiMaxRetries || !_isRetryable(e)) {
           if (e is GeminiException) rethrow;
-          throw GeminiException(message: e.toString());
+          throw _toFriendlyException(e);
         }
         final delay = Duration(seconds: 1 << (attempt - 1)); // 1, 2, 4, 8, 16
         await Future.delayed(delay);
       }
     }
+  }
+
+  /// Convert low-level errors into user-friendly [GeminiException]s.
+  GeminiException _toFriendlyException(Object error) {
+    if (error is DioException) {
+      final code = error.response?.statusCode;
+      if (code == 429) {
+        return const GeminiException(
+          message: 'API 请求频率超限，请稍后再试',
+          statusCode: 429,
+        );
+      }
+      if (code != null && code >= 500) {
+        return GeminiException(
+          message: 'Gemini 服务暂时不可用 ($code)，请稍后再试',
+          statusCode: code,
+        );
+      }
+      if (error.type == DioExceptionType.connectionTimeout ||
+          error.type == DioExceptionType.receiveTimeout ||
+          error.type == DioExceptionType.sendTimeout) {
+        return const GeminiException(message: '请求超时，请检查网络后重试');
+      }
+      if (error.type == DioExceptionType.connectionError) {
+        return const GeminiException(message: '网络连接失败，请检查网络设置');
+      }
+    }
+    if (error is TimeoutException) {
+      return const GeminiException(message: '请求超时，请检查网络后重试');
+    }
+    return GeminiException(message: error.toString());
   }
 
   bool _isRetryable(Object error) {

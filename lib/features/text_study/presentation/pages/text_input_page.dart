@@ -45,6 +45,7 @@ class _TextInputPageState extends ConsumerState<TextInputPage> {
       );
 
       if (mounted) {
+        ref.invalidate(studyTextsListProvider);
         context.go('/text-study/reader/$studyTextId');
       }
     } catch (e) {

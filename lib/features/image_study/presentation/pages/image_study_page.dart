@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 
+import '../../../../core/error/exceptions.dart';
 import '../../../../core/network/gemini_client.dart';
 import '../../../../core/widgets/empty_state_widget.dart';
 import '../../../../core/widgets/error_retry_widget.dart';
@@ -65,8 +66,9 @@ class _ImageStudyPageState extends ConsumerState<ImageStudyPage> {
       }
     } catch (e) {
       if (mounted) {
+        final msg = e is GeminiException ? e.message : '$e';
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('图片识别失败: $e')),
+          SnackBar(content: Text('图片识别失败: $msg')),
         );
       }
     } finally {
